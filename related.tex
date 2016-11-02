@@ -1,0 +1,117 @@
+\chapter{Related Work}
+\label{chap:related}
+
+\section{Auto-Ballooning in Xen}
+Xen is a popular open-source, bare-metal hypervisor which was developed by University of Cambridge Computer Laboratory in 2003 and was the first hypervisor to support paravirtualization. Support for full vritualization was later added to it. Xen has autoballooning feature which works via the autoballoon driver that exists in the Linux kernel. Autoballooning implementation in our work has some key differences to autoballooning in Xen, which have been discussed later. It is important to understand both techniques for comparison. To understand Xen hypervisor's method of autoballooning, it is first essential to understand transcendent memory in Linux.
+
+\subsection{Transcendent Memory (tmem)}
+Transcendent memory (tmem) \cite{magenheimer2009transcendent} is a type of memory which the linux kernel cannot directly enumerate, track or directly address, but helps in more efficient utilization of memory by a single kernel or load-balancing of memory between multiple kernels in a virtualized environment. 
+
+The implementation of tmem is divided into two parts - frontend and backend. Frontend provides the interfaces for different types of data which can be stored provided by tmem to the kernel, while backend is the underlying implementation of storage/retrieval methods. Two basic operations provided by the frontend are 'put' and 'get'. If the kernel wants to save some data into tmem, it uses the 'put' operation while 'get' is used to retrieve the data.
+
+\subsubsection{Tmem Frontends}
+There are two tmem frontends in the Linux kernel which cover two major types of kernel memory - \textit{anonymous pages} and \textit{file backed pages}.
+\begin{enumerate}
+\item \textbf{Cleancache:} Cleancache is used for storing pages which are backed by files on a disk. A kernel can choose to reclaim such pages at the times of memory pressure. These pages are evicted from memory. If the same page is to be used again, a page fault happens and it is fetched from the disk. Before evicting such a page, the kernel can choose to store it in cleancache. If the operation succeeds, the page can possibly be reclaimed from tmem at any later time, otherwise it has to be reclaimed from disk, if needed
+
+Cleancache data in tmem is ephemeral i.e.\ tmem can choose to discard any cleancache data at any point of time. Later, when a kernel wants its data back from tmem, if tmem has already discarded that data, the kernel can fetch it from the disk.
+
+\item \textbf{Frontswap:} Frontswap is used for storing swap pages. Linux swap subsystem stores anonymous pages in a swap device when it needs to evict them. Whenever the swap subsystem of the Linux kernel wants to swap a page to swap device, it can send the page to tmem instead. If the operation succeeds, the page is written to tmem, otherwise it goes to the swap device. Frontswap provides a guarantee that a page stored in it can be reclaimed at any later point of time, and it will not be discarded.
+\end{enumerate}
+
+\subsubsection{Tmem Backends}
+There are multiple backends for tmem - \textit{zcache}, \textit{transcendent memory for Xen}, and \textit{RAMster}. Tmem was originally developed for Xen with Xen backend. The other backends were created later. For autoballooning, we are only concerned with the Xen backend.
+
+Tmem backend for Xen works in a virtualized environemnt under the Xen hypervisor to share the spare hypervisor memory amongst the running VMs. In a virtualized environment, the memory is allocated to the running VMs on demand. Some memory is also reserved for the hypervisor to run. Thus, it may have some free memory which is not used by anyone nd can be used for Tmem. This will result in faster swap out/in and page reclamation for the guests under memory pressure. This plays an important part in autoballooning of VMs and differentiates autoballooning in KVM from Xen, as we will see in the later sections.
+
+\subsubsection{Frontswap Self Shrinking}
+
+When kernel swaps out a page, it assumes that the page will go to disk and may remain there for long time even if it is not used again as kernel assumes disk space is less costly and abundant. But if the page has gone to frontswap, it is taking up valuable memory which might be better used elsewhere. To resolve this problem, \textit{frontswap-self-shrinking} is used. When a guest kernel is under normal memory pressure, it uses partial swapoff interface to bring the pages which were swapped to tmem back to guest's memory. This frees tmem for use by other guests which might be under memory pressure.
+
+\subsection{Auto-Balloon Mechanism}
+Autoballooning in Xen requires transcendent memory. In each guest, a autoballoon driver is present. A thread of the driver runs periodically in some fixed (configurable) time interval which sets the target size of the guest.
+
+
+$$Target = Committed\ pages + Reserved\ pages + Balloon\ reserved\ pages$$
+
+
+\textit{Committed pages} are the pages which are used by some process and may reside either in memory or swap. \textit{Reserved pages} are the pages reserved from normal usage by the kernel. \textit{Balloon reserved pages} form the memory reserved by the balloon driver to provide some extra memory for the kernel caches and some room to grow for any process that may demand more memory in the future. It defaults to 10\% of the total memory size of the guest. If the target is less than the current RAM, the guest is ballooned down, else it is ballooned up. There is a hysteresis counter which represents the number of iterations it will take for the machine to balloon down to target. So, each time self-ballooning process runs, 
+$$Memory = Current - \frac{Current-Target}{hysteresis\ counter}$$
+
+Hysteresis counter is different for ballooning up and down. There is also a\textit{min usable MB} parameter, below which machines cannot be ballooned.
+
+It is important to note here that Xen autoballooning is proactive in nature. Even if none of the guests is under memory pressure, it reclaims free/idle memory from the guests. This may seem wasteful as the memory reclaimed when there is no memory pressure on the host may have been better used by the original guest for page caches. But this is compensated by the fact that the reclaimed memory, if not given to any other host, will go to tmem, which will lead to faster swap in/out for all the guests. So, the reclaimed memory is shared by all the guests and can be used by them depending on the need. This kind of ballooning is not possible for KVM because there is no tmem backend for QEMU-KVM. Thus, QEMU-KVM requires reactive ballooning.
+
+\section{Memory Management in VMware ESX}
+VMware was founded in 1999 when it launched its proprietary hypervisor which used binary translation techniques for x86 virtualization. They later released an enterprise class bare metal hypervisor called VMware ESXi. ESX has very robust memory management and it introduced several novel techniques as early as 2003 which are still being used and have been implemented in other platforms. The techniques used by ESX to manage memory \cite{waldspurger2002memory} of its guests and facilitate memory overcommitment have been very briefly described here.
+
+\subsection{Memory Reclamation Techniques}
+ESX uses several memory reclamation techniques.
+\begin{enumerate}
+\item \textbf{Content-Based Page Sharing:} In a virtualized environment, several guests might be running common OS and some common applications which means that there would be lots of pages having the same content. Instead of keeping separate copies of these pages for separate guests, the duplicate pages are deleted and only one copy of the page is kept which is marked Copy-On-Write(COW). When any of the guests attempts to write to that page, a new copy of the page is created by the kernel which is then modified.
+
+Linux kernel has KSM(Kernel Same-Page Merging) \cite{ksm} which performs the same task and is used in virtualization by QEMU-KVM.
+\item \textbf{Memory Ballooning:} Memory Ballooning has been explained in Section \ref{ballooning}
+\item \textbf{Page compression:} In this case, the content of the page is compressed and stored. When the page is accessed, its content is decompressed.
+\item \textbf{Demand Paging:} ESX server has a swap daemon which handles hypervisor level swapping. The swap daemon gets the target swap levels of each VM from the swapping policy and selects the pages that need to be swapped. 
+
+\end{enumerate}
+
+\subsection{Memory Reclamation Policies}
+The ESX server defines four memory states depending upon which it employs the memory reclamation techniques.
+
+\begin{enumerate}
+\item \textbf{High:} More than 6\% of the total memory of the hypervisor is free at this point. Only page sharing is employed in this state.
+\item \textbf{Soft:} Free memory is between 6\% and 4\%. Page sharing is active. Balloon driver also starts reclaiming idle memory.
+\item \textbf{Hard:} Free memory is between 4\% and 2\%. The hypervisor now aggressively starts reclaiming memory through swapping. Page compression also becomes active. So, on page reclamation, if it is compressible or shareable, it is compressed/shared otherwise it is swapped out.
+\item \textbf{Low:} Below 1\% free memory. Along with memory reclamation, ESX also blocks any new memory allocation by any guest.
+\end{enumerate}
+
+One important point of contention here is which pages and how many pages to reclaim from each guest. For determining how much memory to reclaim from each guest, ESX uses a share based allocation technique. After getting the amount of memory to reclaim, it chooses the pages to reclaim randomly.
+
+\subsubsection{Share-Based Allocation}
+Under share-based allocation, each guest is allocated some number of shares for memory. A machine is guaranteed a minimum resource fraction equal to its fraction of the total shares in the system. So, in case of memory pressure, memory should be revoked from the guest which has the fewest shares per allocated page. This may lead to idle clients having large number of shares hoarding memory unproductively while active clients having fewer shares suffer under memory pressure. 
+
+To resolve this situation, ESX imposes a tax on idle memory of guests. Thus, for a client with $S$ shares and $P$ allocated pages  out of which a fraction $f$ are active, the shares-per-page ratio $R$ is
+$$R = \frac{S}{P(f+k(1-f))}$$
+where the idle page cost is $k=1/(1-\tau)$ and tax rate $\tau$ is between 0 and 1. Tax rate controls the maximum fraction of idle pages that can be reclaimed from a VM. The default value of $\tau$ is $0.75$.
+\subsubsection{Idle Memory Calculation} \label{working-set}
+For calculating share per page ratio effectively, idle memory calculation for each guest is required. ESX uses statistical sampling to estimate the working set size of each VM. At the start of the sampling period, a small number $n$ of a VM's pages are selected randomly using uniform distribution. Accesses to these pages are tracked by the hypervisor by incrementing a counter $t$ on every page access. At the end of the sampling period, the fraction of working set is estimated as $f=t/n$.
+
+\section{VMware Distributed Resource Management}
+VMware created DRS \cite{gulati2012vmware} for their hypervisor which is responsible for allocation of the physical resources to a set of virtual machines deployed in a cluster of hosts. The key capabilities of their DRS are a hierarchical resource pool abstraction, automatic initial placement of VM, and dynamic load balancing of VMs based on their fluctuating demands. Some of our work is inspired by VMware's DRS and aimed at fixing some of its limitations. Hence, this section provides an appropriate background for the next chapter.
+
+\subsection{Resource Model}
+Each VM in VMware DRS has three resource control parameters. \textit{Reservation} specifies a minimum guaranteed amount of a particular resource which will always be available to the VM. \textit{Limit} specifies the maximum amount of a resource that can be allocated to a VM. \textit{Shares} specify the relative importance of the VMs similar to the shares in memory allocation of ESX described in the previous section.
+
+The resources in a cluster are divided into resource pools which are used for dividing the aggregate capacity of the cluster into a group of VMs. The resource pool forms a  hierarchical tree structure with leaves as the actual VMS. The resource pool can represent the hierarchical structure of the oraganization.
+
+\subsection{DRS Algorithm}
+The DRS algorithm runs every five minutes. It first divides the resources of the cluster amongst the resource pool in a process called \textit{divvying}. It computes the reservation, limit, and shares of each pool. To distribute the resources, it is important to calculate the demand of each VM, which can be used to calculate the total load on the cluster. The working set of a VM is used as it's memory demand. The working set is calculated in the way explained in Section \ref{working-set}. The CPU demand of a VM is computed as its actual CPU consumption plus a scaled portion of the  time it was ready to execute, but it spent in the ready queue due to contention.
+
+$$ CPU_{demand} = CPU_{used} + \frac{CPU_{run}}{CPU_{run}+CPU_{sleep}}*CPU_{ready}$$
+
+The divvying algorithm works by dividing the resource at the parent resource pool amongst the children. It executes in two phases. In the initial phase, it aggregates demand values of the VMs from leaves up to the root. At each step, the demand values are updated to be not less than the reservation and not more than the limit. The second phase proceeds in a top-down manner and resources (limit and reservation) of parents at each level are divided such that they are in proportion to shares of the siblings. 
+
+After divvying, the DRS load-balances the cluster based on a metric called dynamic entitlement. Dynamic entitlement is equal to the demand of the VMs if demands of each VM in the cluster can be met, otherwise it is a scaled down value of a VM’s demand based on its shares. It is computed by running the divvying algorithm at the resource pool tree using the cluster capacity as the resource. Then, normalized entitlement is calculated for each host. For a host $h$, normalized entitlement $N_h$
+ is defined as the sum of per VM entitlement of all VMs running on $h$ divided by the host capacity.
+ $$N_h = \Sigma \frac{E_i}{C_h}$$
+ $N_h$ values are per-resource. $N_h < 1$ signifies that the host has some unused capacity for that resource, while $N_h > 1$ means that it is overloaded for that resource. The DRS then calculates the cluster wide imbalance $I_c$ as the weighted sum of the standard deviation of all $N_h$ values for CPU and memory resources. If memory is highly contested, it's weight is more. If CPU is highly contested, CPU's weight is more. If none are highly contested, both have equal weights. The higher weighted resource gets a weight of $three$ while the lower weighted resource gets a weight of $one$. These values were decided by experimentation.
+
+The DRS then tries to minimize the cluster wide imbalance $I_c$ by considering all possible VM migrations (trying out all possible guest VM , destination host pairs). The best VM migration is selected, applied to cluster’s state, and another move is selected. This process continues till no beneficial moves remain, or enough moves have been selected for this pass, or the cluster imbalance $I_c$ is below a threshold. Additionally, DRS also does a cost-benefit analysis of each move where it filters out the moves with higher migration cost than benefit in terms of decreasing load imbalance.
+
+\subsection{Limitations of VMware DRS}
+The major limitation of VMware DRS is scaling, which is due to several reasons. There is a central controller for the cluster which monitors all the hosts and virtual machines. In a cloud scale, where the hosts can grow to thousands in number and VMs to tens of thousand, a central machine monitoring all of the components and taking all the decisions is not possible. Apart from this, in making a decision, the DRS considers all possible VM migrations. The time for running this algorithm grows exponentially with the number of VMs and hence cannot scale. On top of all this, the controller is a single point of failure for the whole cluster in this design.
+
+Another limitation of VMware DRS is that it manages only CPU and memory resources. Other resources like network bandwidth, and disk I/O, which can affect the performance of a VM,can also be considered.
+
+\section{Other Works}
+%TODO: citations here
+Sandpiper \cite{wood2009sandpiper} is a system for automating the task of detecting hotspots and migrating VMs in response to hotspots. For VM migration, Sandpiper takes three resources into consideration - CPU, memory and network bandwidth. The empty volume of each host is calculated as $empty\_vol = (1-cpu)(1-net)(1-mem)$. It calculates $volume$ occupied by a VM as $$vol = \frac{1}{1-cpu} * \frac{1}{1-net} * \frac{1}{1-mem}$$. It then calculates volume to size ratio (VSR) of each VM, where size is a VMs memory footprint. The VM with the maximum VSR from the host having the least $empty\_vol$ is migrated to the host having the maximum $empty\_vol$. Some of the problems and anomalies in this approach have been explored \cite{mishra2011theory}.
+
+CloudScale \cite{shen2011cloudscale} uses long-term resource demand prediction models to predict the resource demands of virtual machines in future based on the previous resource usage data. It handle conflicts by proactive migration of virtual machines based on the predicted demands. Tan et al. \cite{tan2011exploiting} propose a similar approach where they use a Principal Component Analysis (PCA) based approach to predict the long-term resource usage profiles of the VMs using the measurements obtained from a commercial data center. They formulate the VM placement problem as a bin-packing problem and propose to place VMs using variance reduction. But in doing so, they assume that the resource usages of the VMs remains constant, which may not be the case in reality.
+
+Vector Dot \cite{singh2008server} is a load balancing algorithm for handling multi-dimensional resource constraints in a virtualized infrastructure. It expresses the normalized resource requirements of machines as multi-dimensional vectors. It then uses the dot product of the resource usage vector (RUV) of the host and the resource requirement vector (RRV) of the guest to choose an appropriate host-VM mapping. To ensure balanced usage of resources, the RRV of the guest should be complementary to the RUV of the host. The anomalies with this approach have been discussed and improvements have been proposed \cite{mishra2011theory}. But these studies do not take scaling into consideration and are not distributed enough to handle the cloud scale. They also do not consider the performance degradation that happens during live migration.
+
+\subsection*{Summary}
+In this chapter, we have discussed the autoballooning mechanism implemented in the Xen hypervisor and how it is different from the autoballooning in KVM. We have discussed the techniques which VMware ESX implemens for memory management and distributed resource scheduling. We have also explored some other important works in this area and their drawbacks.

@@ -1,0 +1,117 @@
+\chapter{Introduction: Virtualization and Resource Management in Cloud}
+\label{chap:intro}
+
+With the advent of large scale cloud computing, the users can get compute resources on demand with flexible pricing models. Cloud vendors pool their massive hardware resources and provide virtual machines on top of it to the users. To best utilize the resources of a virtualized cloud infrastructure, resource overcommitment is used. Allocating more virtual resources to a machine or a group of machines than are physically present is called resource overcommitment.
+
+Since most applications will not use all of the resources allocated to them at all the times, most of the resources of a cloud provider will remain idle without overcommitment. Hence, this approach is more profitable and less wasteful. Orthogonal to overcommitment is the fact that cloud vendors have to satisfy some SLAs (Service Level Agreements) which they have with the users i.e.\ the promised resources should be available to the users whenever they need it. Distributed resource scheduling (DRS) is used to meet these SLAs.
+
+Apart from the public cloud offerings like Amazon Web Services and Microsoft Azure, many companies and educational institutions are virtualizing their IT infrastructure to create private clouds. Private clouds may have less strict SLA's but require resource scheduling to enhance performance of the virtual machines. Overcommitment without resource management may lead to degradation in performance.
+
+\section{Virtualization}
+Virtualization is one of the driving technologies behind IaaS (Infrastructure as a Service). Virtualization makes it possible to run multiple operating systems with different configurations on a physical machine at the same time. 
+
+To run virtual machines on a system, a software layer called hypervisor or virtual machine monitor (VMM) is required. The hypervisor has the control of all the hardware resources and can take away resources from one VM to give it to another. The hypervisor also maintains the state of all the VMs at all the times. It does these by trapping all the privileged instructions executed by the guest VM and emulating the resource they access. The hypervisor is responsible for emulating all the hardware devices and providing proper resource isolation between multiple machines running on the same physical machine. 
+
+There are three different techniques used for virtualization \cite{horne2007understanding} which mainly differ in the way they trap the privileged instructions executed by the guest kernel.
+
+\begin{enumerate}
+\item \textbf{Full Virtualization with Binary Translation.} In this approach, user mode code runs directly on CPU without any translation, but the non-virtualizable instructions \cite{Popek:1974:FRV:361011.361073} in the guest kernel code are translated on the fly to code which has the intended effect on the virtual hardware.
+
+\item \textbf{Hardware Assisted Full Virtualization.}To make virtualization simpler, hardware vendors have developed new features in the hardware to support virtualization. Intel VT-x and AMD-V are two technologies developed by Intel and AMD respectively which provide special instructions in their ISA (Instruction Set Architecture) for virtual machines and a new ring privilege level for VM. Privileged and sensitive calls are set to automatically trap to the VMM, removing the need for either binary translation or paravirtualization. It also has modified MMU with support for multi level page tables \cite{bhargava2008accelerating} and tagged TLBs. 
+
+%TODO: cite xen
+\item \textbf{Paravirtualization.} This technique requires modification of the guest kernel. The non-virtualizable/privileged instructions in the source code of the guest kernel are replaced with hypercalls which directly call the hypervisor \cite{barham2003xen}. The hypervisor provides hypercall interfaces for kernel operations like memory management, interrupt handling, and communication to devices. It differs from full virtualization, where unmodified guest kernel is used and the guest OS does not know that it is running in a virtualized environment.  
+\end{enumerate}
+
+
+Hypervisors can be bare-metal hypervisors or hosted hypervisors. A Bare-metal
+hypervisor runs directly on the physical hardware while the hosted hypervisor runs
+on top of conventional operating systems. There are several hypervisors available
+in the market with VMWare ESX and Xen \cite{barham2003xen} being the popular bare-metal hypervisors,
+while KVM-QEMU \cite{kivity2007kvm, bellard2005qemu} being a popular hosted hypervisor which runs on top of the Linux
+operating system. KVM is a kernel module providing support for hardware assited virtualization in Linux while, QEMU is a userspace emulator. KVM uses QEMU mainly for emulating the hardware \cite{Habib:2008:VK:1344209.1344217}. So, both these pieces of software work together as a complete hypervisor for linux. KVM-QEMU and Xen are open source while ESX is proprietary. For the
+purpose of this thesis, we will refer to KVM-QEMU wherever hypervisor is used unless specified otherwise.
+
+Virtualization provides a number of benefits other than resource isolation, 
+which makes it the fundamental technology behind IaaS.
+\begin{enumerate}
+\item It provides the ability to treat disks of virtual machine as files which can be easily snapshotted for backup and restore.
+\item It provides ease of creation of new machines and deployment of applications through pre-built images of the filesystem of the machine.
+\item Virtual machines can be easily migrated or relocated if the physical machines may require maintenance or develop some failure.
+\item Ease in increasing the resource capacity (RAM or CPU cores) of the machine at runtime by CPU or memory hotplug \cite{Hansen_hotplugmemory}, or otherwise.
+\item Since the hardware resources are emulated by the hypervisor, there is an opportunity for overcommitment of CPU and memory resources here. 
+\end{enumerate}
+
+\subsection{Memory Overcommitment and Ballooning} \label{ballooning}
+
+In memory overcommitment, more memory is allocated to the virtual machines(VM) than is
+physically present in hardware. This is possible because hypervisors allocate
+memory to the virtual machines on demand. KVM-QEMU treats all the running VMs as
+% TODO: give the line number reference for malloc in qemu source
+processes of the host system and uses malloc to allocate memory for a VM's
+RAM. Linux uses demand paging for its processes, so a VM on bootup will allocate
+only the amount of memory required by it for booting up, and not its whole capacity. 
+
+On demand memory allocation in itself is not enough to make memory overcommitment a
+viable option. There is no way for the hypervisor to free a memory page that has been freed by the guest OS. Hence a page once allocated to a VM always remains
+allocated. The hypervisor should be able to reclaim free memory from the guest machines, otherwise the memory consumption of
+guest machines will always keep on increasing till they use up all their memory
+capacity. If the memory is overcommited, all the guests trying to use their maximum
+capacity will lead to swapping and very poor performance.
+
+There exists a mechanism called \textit{memory ballooning} to reclaim free memory from guest machines. This is possible through a device driver that exists in guest operating system and a backend virtual device in the hypervisor which talks to that device driver. The balloon driver takes a target memory from the balloon device. If the target memory is less than the current memory of the VM, it allocates $(current-target)$ pages from the machine and gives them back to the hypervisor. This process is called balloon inflation. If the target memory is more than the current memory, the balloon driver frees required pages from the balloon. This process is called balloon deflation. Memory ballooning is an opportunistic reclamation technique and does not guarantee reclamation. The hypervisor has limited control over the success of reclamation and the amount of memory reclaimed, as it depends on the balloon driver which is loaded inside the guest operating system.
+
+The Memory ballooning technique leverages modified guest kernel as it uses an extra device driver and hence falls under Paravirtualization. But the virtio balloon driver \cite{russell2008virtio} exists in the linux source code since version 2.6 and a backend balloon device exists in QEMU to facilitate ballooning. The virtio drivers can be installed additionally in a Windows system.
+
+
+\subsection{CPU Overcommitment}
+CPU overcommitment happens through time sharing of CPU cores on a physical machine by multiple VMs. The virtual CPU cores for a VM are called vCPU. Most hypervisors allow multiple virtual machines to share same physical CPU core for multiple vCPUs.
+QEMU-KVM runs one vCPU thread per guest CPU \cite{qemu-multi}. The thread scheduling onto physical CPU is handled by the host operating system. Time sharing CPU cores can incur a performance penalty, which is measured by the time a vCPU spends in the ready queue, i.e.\, the time for which a vCPU is ready to be scheduled but does not get scheduled. This time is called the \textit{steal time} as it represents the CPU cycles that have been stolen from the vCPU. If the guests on a host experience high steal, the CPU of the host is overloaded.
+
+\section{Virtual Machine Live Migration}
+VM live migration \cite{Clark:2005:LMV:1251203.1251223} is a technique to migrate a running VM from one host to another without shutting it down. Live migration involves migrating the disk, memory and CPU states of the running VM to the destination host and resuming the VM there. Migrating disk can be as easy as just copying the disk to destination or using a file-system shared over the network like Network File System (NFS). There are two popular techniques for migrating the VM memory and state:
+
+\begin{enumerate}
+\item \textbf{Pre-Copy Live Migration.} It follows an iterative page copying technique wherein first, all the pages of the VM are copied to the destination. From next iteration onward, only the pages which were dirtied during the previous iteration are copied to the destination. This process continues till the page dirtying speed is less than the page transfer speed. Then the VM at the source is stopped, remaining dirty pages and VM state is copied to the destination, and the VM is resumed at the destination. QEMU-KVM uses pre-copy live migration \cite{qemu-migration}.
+
+\item \textbf{Post-Copy Live Migration.} The VM is stopped at the source, its state is copied to the destination, and the VM resumed there. The pages of the VM are transferred to the destination in background, with the pages that are immediately demanded by the VM via page fault given the highest priority in transfer. Thus, the performance of the VM is degraded before its working set is transferred.
+\end{enumerate}
+
+The migration time of a VM is the time taken to resume the VM on the destination after triggering the migration. There is also a small amount of downtime involved in live migration in which the VM is neither running on the host, nor on the destination. Live migration of VMs connected to a network is especially tricky because the new VM has to assigned the same IP address and all the packets have to rerouted to the new destination without any delay to prevent packet loss and downtime of any service running inside the VM which uses the network.
+\Fref{tab:live-migration} lists some other key differences between the two techniques \cite{yabusame}.
+
+\begin{table}[hbt]
+\caption{Differences between pre-copy and post-copy live migration}
+\label{tab:live-migration}
+\begin{center}
+\begin{tabularx}{0.91\textwidth}{XX}
+\hline\noalign{\smallskip}
+Pre-Copy & Post-Copy \\
+\noalign{\smallskip}
+\hline
+\noalign{\smallskip}
+Total migration time = (RAM size/link speed) + overhead + non-deterministic  (depending on dirtying pattern) & Total migration Time = (RAM
+size/link speed) + overhead \\ \\
+
+Worst downtime =  (VM state time) + (RAM size/link speed) & Worst downtime = VM state time \\ \\
+
+It can cope with network or system failure. & In case of network or system failure, VM cannot be recovered. \\
+\hline
+\end{tabularx}
+\end{center}
+\end{table}
+
+
+\section{Resource Management in Cloud}
+
+Resource management is an essential technique to utilize the underlying hardware of the cloud efficiently. The role of the resource manager is to manage the allocation of physical resources to the virtual machines deployed on a cluster of nodes in a cloud. Different resource management systems may have different aims depending upon the needs. For a private cloud like in an educational institution, the most common aim might be to maximize performance of the virtual machines while minimizing the operational costs of the cloud infrastructure. 
+
+Minimizing operational costs involves minimizing the number of physical machines used. This can be achieved through overcommitment of resources. Resource overcommitment comes with some new problems like hotspot elimination and where to schedule new incoming VMs to minimize chances of hotspot. If the total capacity of the virtual machines running on a physical machine is more than the total capacity of the physical machines, a situation may arise wherein the VMs may want to use a sum total of more resources than are present. Not satisfying those resource requirements may lead to violation of SLAs and poor performance of the VMs. This situation is called a hotspot. A distributed resource scheduler (DRS) is a piece of software that runs on different nodes in the cluster and handles dynamic resource allocation to different VMs in the cluster.
+
+Memory ballooning and live migration of VM can help in mitigating hotspots. The basic idea is that if a VM is short on memory, ballooning can be used to take away some memory from another guest on the same host which has some free memory and give it to the needy guest. If none of the guests have any free memory, the host is overloaded. A guest has to be migrated from this host to another host while taking into account the overall load of the cluster. This might sound simple, but there are several challenges involved in this process. Some of the challenges are determining the amount of free memory a VM can give away without affecting its own performance, determining whether benefits of migration are more than performance loss, selecting which virtual machine to migrate such that maximum benefit is achieved out of the migration, selecting destination host to minimize the chances of future migrations, filtering intermittent spikes from resource usage graph of VMs to determine their actual load profile and distributed monitoring of VMs which can scale to a large number of machines. In this thesis, we address large scale monitoring and ballooning of virtual machines. 
+
+\section{Organization of this Thesis }
+The rest of the thesis is organized as follows. Chapter 2 describes related work that has been done in this area. Chapter 3 consolidates the requirements of a DRS, outlines our approach to building the DRS, and proposes a decentralized and scalable architecture for it. Chapter 4 describes the details of implementation of the monitoring and autoballooning components of our DRS. Chapter 5 analyses the monitoring and autoballooning components of the DRS through experimental data. Finally, Chapter 6 concludes the work done in this thesis and provides some insights on possible extensions to this work.
+
+\subsection*{Summary}
+In this chapter, we discussed the different technologies behind cloud computing and looked at how they are used. We have looked at how resource overcommitment helps in utilizing the hardware efficiently and why resource management is essential for overcommitment to work. We have also identified several problems and challenges related to resource management which have been resolved in this thesis.

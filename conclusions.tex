@@ -1,0 +1,26 @@
+\chapter{Conclusions}
+\label{chap:conclusions}
+
+\section{Summary}
+Resource overcommitment is an essential technique for efficient use of resources in a cloud infrastructure. There are several hurdles in overcommitment which have not been addressed completely yet. Most of the studies in this field focus on just a part of the problem, but do not solve it as a whole. The subproblems that have attracted most attention is the optimal placement of virtual machines depending on their demands. But many of these studies do not take the dynamic nature of resource demand of the VMs or the performance degradation during live migration into account. Through this thesis, we have tried to solve this problem by taking the whole picture into account, and not just a part of it.
+
+In this thesis, we have identified some of the major problems faced in overcommitment of CPU and memory resources in a virtualized environment. We have described some of the relevant work done in this area and their limitations. We have proposed an approach and architecture to build a decentralized distributed resource scheduler to manage the cloud resources under overcommitment. The DRS is designed to be horizontally scalable and has no single point of failure. We have also implemented a complete DRS system for QEMU-KVM virtualization platform. The implementation of the autoballooning and monitoring component have been described in detail and their performance has been analyzed by experimentation.
+
+Our implementation is open-source and the code for it can be found here:
+\begin{center}
+\url{https://github.com/shivanshuag/thesis-code}
+\end{center}
+
+\section{Future Work}
+Although we have demonstrated that our technique for autoballooning is efficient, there are still some limitations to this approach which need to be addressed. 
+
+\subsection{Limitation of Memory Ballooning}
+The balloon driver is used to modify the amount of memory a VM has. This might have some unintended affects on the processes running inside the VM. A new process starting on the guest may require more memory than is present(because some amount of memory has been ballooned out) and crash if it does not get that memory. In some cases, if no available memory is left inside the guest, and the guest does not have swap space, the Linux OOM killer may be activated to kill some of the processes and reclaim memory. This is a rare situation and requires that either there is no swap device, or swap memory is exhausted.
+
+Ideally, the memory ballooning process should be totally transparent to the guest VM. Doing this is a non-trivial task which might require exposing the memory allocation requests inside the guest VM to the host.
+
+\subsection{Supporting More Resource Types}
+The DRS we have built right now supports balancing of only CPU and memory resources. Other resources like the network bandwidth and disk i/o can also be overcommited and can be taken into account for balancing and migration.
+
+\subsection{Multiple Migrations}
+In our DRS, the migration service considers only single migrations to resolve hotspots. Sometimes, multiple migrations may be required to resolve a single hotspot. This will involve coordination between more than two machines for migration. Strategies to make this process effective and beneficial need to be explored.

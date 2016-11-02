@@ -1,0 +1,104 @@
+% prelude.tex
+%   - titlepage
+%   - dedication (optional)
+%   - approval sheet
+%   - course certificate
+%   - table of contents, list of tables and list of figures
+%   - nomenclature
+%   - abstract
+%============================================================================
+
+
+\clearpage\pagenumbering{roman}  % This makes the page numbers Roman (i, ii, etc)
+
+
+
+% TITLE PAGE
+%   - define \title{} \author{} \date{}
+\title{Distributed Memory and CPU Management in Cloud Computing Environments}
+\author{Shivanshu Agrawal}
+\date{May, 2016}
+
+%  - Roll number, required for title page, approval sheet, and
+%    certificate of course work
+\rollnum{11907688}
+
+%   - The default degree is ``Doctor of Philosophy''
+%     (unless the document style msthesis is specified
+%      and then the default degree is ``Master of Science'')
+%     Degree can be changed using the command \iitbdegree{}
+\iitbdegree{Master of Technology}
+
+%   - The default report type is preliminary report.
+%      * for a PhD thesis, specify \thesis
+\thesis
+%      * for a M.Tech./M.Phil./M.Des./M.S. dissertation, specify \dissertation
+%\dissertation
+%      * for a DIIT/B.Tech./M.Sc.project report, specify \project
+%\project
+%      * for any other type, use  \reporttype{}
+%\reporttype{ReportType}
+
+%   - The default department is ``Unknown Department''
+%     The department can be changed using the command \department{}
+\department{Computer Science \& Engineering}
+
+%    - Set the guide's name
+\setguide{Prof. Mainak Chaudhuri}
+\setguidedept{Department of Computer Science \& Engineering}
+
+%   - once the above are defined, use \maketitle to generate the titlepage
+\maketitle
+
+%--------------------------------------------------------------------%
+% CERTIFICATE
+%     The first page after the title page.
+\makecertificate
+
+%--------------------------------------------------------------------%
+% COPYRIGHT PAGE
+%   - To include a copyright page use \copyrightpage
+% \copyrightpage
+
+%--------------------------------------------------------------------%
+% ABSTRACT
+\begin{abstract}
+  To efficiently utilize the resources in a virtualized environment, they need to be overcommited. Overcommitment is the process of allocating more resources to a virtual machine, or a group of virtual machines than are physically present on the host. It is based on the premise that most of the Virtual Machines will use only a small percentage of the resources allocated to them at a given time. However, situations may arise when the resources required by the virtual machines are more than the physical resources present on the machine. The performance of the Virtual Machines will be severely impacted in these situations. Most cloud providers generally have Service Level Agreements (SLAs) with their clients and hence cannot allow virtual machines to deliver a poor quality of service.
+
+In this thesis, we explore the problem of overcommitment of the CPU and memory resources. We propose a distributed resource scheduler (DRS) which uses techniques such as memory ballooning and virtual machine live nigration to solve the problems in CPU and memory overcommitment. We design an architecture for DRS which is horizontally scalable and describe the techniques involved in monitoring and memory ballooning aspects of the DRS.
+
+\end{abstract}
+
+%--------------------------------------------------------------------%
+% DEDICATION
+%   Dedications, if any.
+\begin{dedication}
+Dedicated to\\
+my parents
+\end{dedication}
+
+% Acknowledgements
+\begin{acknowledgments}
+I would like to extend my sincere gratitude towards my thesis supervisors, Prof. Mainak Chaudhuri and Prof. Sumit Ganguly for their guidance, constant support and encouragement. This thesis would not have been possible without them.
+
+I thank the Department of Computer Science and Engineering, IIT Kanpur for providing the necessary infrastructure and congenial environment facilitating this research work.
+
+I also thank Tejas Gandhi for providing invaluable help in setting up Openstack, Adarsh Jagannath for various useful discussions we had which proved instrumental in the progress of this thesis, Abhimanyu Arora  for working on a part of this thesis together with me, and all my fellow batchmates for the delightful time we spent together and making my stay at IITK memorable.
+
+I am forever indebted to my family for everything in my life.
+
+\hfill \hfill \textbf{Shivanshu Agrawal}
+\end{acknowledgments}
+
+%--------------------------------------------------------------------%
+% CONTENTS, TABLES, FIGURES
+\tableofcontents
+\listoftables
+
+\cleardoublepage
+\phantomsection \label{listoffig}
+\addcontentsline{toc}{chapter}{List of Figures}
+%\listof{program}{List of Figures}
+\listoffigures
+
+\cleardoublepage\pagenumbering{arabic} % Make the page numbers Arabic (1, 2, etc)
